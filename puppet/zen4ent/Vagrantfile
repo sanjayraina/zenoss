@@ -1,0 +1,54 @@
+$script = <<SCRIPT
+   if [ -f /usr/sbin/VBoxService ]
+   then
+      sed -i '/nameserver/c\\nameserver 8.8.8.8' /etc/resolv.conf
+      echo "127.0.0.1 localhost" > /etc/hosts
+      echo "192.168.1.211 zen" >> /etc/hosts
+   else
+      #Puppet repo and install
+      rpm -ivh https://yum.puppetlabs.com/puppetlabs-release-el-6.noarch.rpm
+      yum -y install puppet
+   fi
+SCRIPT
+
+Vagrant.configure(2) do |config|
+   config.vm.box = "puppetlabs/centos-6.5-64-puppet"
+   config.vm.hostname = "zen4"
+   
+   # Local instance
+   #
+   config.vm.provider :virtualbox do |vb, override|
+     vb.gui = true
+     vb.memory = "6144"
+     override.vm.network :private_network, ip: "172.28.128.11"
+   end
+
+   # AWS instance
+   #
+   config.vm.provider :aws do |aws, override|
+      config.ssh.pty = 'true'
+      override.vm.box = "ubuntu_aws"
+
+      aws.ami = "ami-bc8131d4"
+      aws.instance_type = "m3.large"
+
+      override.ssh.username = "root"
+      aws.keypair_name = "centos_sr"
+      override.ssh.private_key_path = "~/.ssh/centos_sr.pem"
+      aws.security_groups = ['zenoss']
+
+      aws.tags = {
+         'Name' => 'ZenOSS 4.2.5 Enterprise',
+      }
+   end
+
+   config.vm.synced_folder ".", "/vagrant", id: "vagrant-root"
+
+   config.vm.provision "shell", inline: $script
+
+   config.vm.provision "puppet" do |puppet|
+      puppet.manifest_file  = "default.pp"
+      puppet.manifests_path = "manifests"
+   end
+end
+
